@@ -59,7 +59,7 @@ export function validateApiPath(path) {
   return url;
 }
 
-export function headersForUrl(url, baseHeaders = {}) {
+export function headersForApiUrl(url, baseHeaders = {}) {
   const headers = Object.fromEntries(
     Object.entries(baseHeaders).filter(([name]) => name.toLowerCase() !== RESEARCHER_HEADER.toLowerCase()),
   );
@@ -69,6 +69,12 @@ export function headersForUrl(url, baseHeaders = {}) {
   }
 
   return headers;
+}
+
+export function stripResearcherHeader(baseHeaders = {}) {
+  return Object.fromEntries(
+    Object.entries(baseHeaders).filter(([name]) => name.toLowerCase() !== RESEARCHER_HEADER.toLowerCase()),
+  );
 }
 
 export function sanitizeAppPath(url) {

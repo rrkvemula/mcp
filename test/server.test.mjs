@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
 import test from 'node:test';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
 import {InMemoryTransport} from '@modelcontextprotocol/sdk/inMemory.js';
@@ -41,26 +42,32 @@ async function connectClient(server) {
   return {client, close: async () => { await client.close(); await server.close(); }};
 }
 
-test('routes only app requests through the researcher-header/log path', () => {
+test('routes app and authentication traffic without adding the researcher header', () => {
   const {decideRequest} = getBrowserModule();
 
   assert.deepEqual(decideRequest({url: 'https://app.aikido.dev/api/issues'}), {
-    action: 'continue', addResearcherHeader: true, log: true,
+    action: 'continue', log: true,
   });
   assert.deepEqual(decideRequest({url: 'https://cdn.aikido.dev/assets/app.js', resourceType: 'script'}), {
-    action: 'continue', addResearcherHeader: false, log: false,
+    action: 'continue', log: false,
   });
   assert.deepEqual(decideRequest({
     url: 'https://login.example.test/authorize',
     resourceType: 'document',
     isNavigationRequest: true,
     redirectedFromUrl: 'https://app.aikido.dev/login',
-  }), {action: 'continue', addResearcherHeader: false, log: false});
+  }), {action: 'continue', log: false});
+  assert.deepEqual(decideRequest({
+    url: 'https://login.example.test/authorize',
+    resourceType: 'document',
+    isNavigationRequest: true,
+    sourceUrl: 'https://app.aikido.dev/login',
+  }), {action: 'continue', log: false});
   assert.deepEqual(decideRequest({
     url: 'https://outside.example.test/',
     resourceType: 'document',
     isNavigationRequest: true,
-  }), {action: 'abort', addResearcherHeader: false, log: false});
+  }), {action: 'abort', log: false});
 });
 
 test('rejects destructive, submitting, and external click targets', () => {
@@ -68,10 +75,14 @@ test('rejects destructive, submitting, and external click targets', () => {
 
   assert.equal(isSafeClickTarget({role: 'link', name: 'Issues', href: '/issues'}), true);
   assert.equal(isSafeClickTarget({role: 'link', name: 'Scans', href: '/scans'}), true);
+  assert.equal(isSafeClickTarget({role: 'link', name: 'Open details', href: '/api/projects/create'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Start AI pentest', type: 'button'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Connect repository', type: 'button'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Delete project', type: 'button'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Save', type: 'submit'}), false);
+  assert.equal(isSafeClickTarget({role: 'button', name: 'Details', type: 'submit'}), false);
+  assert.equal(isSafeClickTarget({role: 'tab', name: 'Details', type: 'submit'}), false);
+  assert.equal(isSafeClickTarget({role: 'button', name: 'Details', type: 'button', formAssociated: true}), false);
   assert.equal(isSafeClickTarget({role: 'link', name: 'External', href: 'https://outside.test/'}), false);
 });
 
@@ -80,7 +91,59 @@ test('blocks filling password, secret, and token fields', () => {
 
   assert.equal(isSensitiveFillTarget({type: 'password', label: 'Password'}), true);
   assert.equal(isSensitiveFillTarget({type: 'text', label: 'API token'}), true);
+  assert.equal(isSensitiveFillTarget({type: 'text', label: 'Value', name: 'access_token'}), true);
+  assert.equal(isSensitiveFillTarget({type: 'text', label: 'Value', name: 'refreshToken'}), true);
+  assert.equal(isSensitiveFillTarget({type: 'text', label: 'Verification code'}), true);
+  assert.equal(isSensitiveFillTarget({type: 'text', label: 'Value', autocomplete: 'one-time-code'}), true);
   assert.equal(isSensitiveFillTarget({type: 'email', label: 'Work email'}), false);
+});
+
+test('navigation reaches the app from a fresh blank page and from an auth page', async () => {
+  const {BrowserController} = getBrowserModule();
+  const destinations = [];
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-navigation-test'});
+  controller.context = {};
+  controller.page = {url: () => 'about:blank', goto: async (url) => destinations.push(url)};
+
+  await controller.navigate('https://app.aikido.dev/');
+  controller.page.url = () => 'https://login.example.test/authorize';
+  await controller.navigate('https://app.aikido.dev/');
+  assert.deepEqual(destinations, ['https://app.aikido.dev/', 'https://app.aikido.dev/']);
+});
+
+test('default form submit controls are blocked using normalized DOM properties', async () => {
+  const {BrowserController} = getBrowserModule();
+  let clicked = false;
+  const element = {
+    type: 'submit',
+    getAttribute: (name) => name === 'href' ? null : null,
+    closest: () => ({tagName: 'FORM'}),
+  };
+  const target = {
+    count: async () => 1,
+    evaluate: async (fn) => fn(element),
+    click: async () => { clicked = true; },
+  };
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-submit-test'});
+  controller.context = {};
+  controller.page = {url: () => 'https://app.aikido.dev/', getByRole: () => target};
+
+  await assert.rejects(() => controller.click({role: 'button', name: 'Details'}), /safe-action policy/);
+  assert.equal(clicked, false);
+});
+
+test('sensitive field detection reads autocomplete and id metadata', async () => {
+  const {BrowserController} = getBrowserModule();
+  const element = {
+    type: 'text',
+    getAttribute: (name) => ({type: null, name: 'value', placeholder: null, autocomplete: 'one-time-code', id: 'otpValue'}[name] ?? null),
+  };
+  const target = {count: async () => 1, evaluate: async (fn) => fn(element), fill: async () => assert.fail('sensitive fill must be blocked')};
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-sensitive-test'});
+  controller.context = {};
+  controller.page = {url: () => 'https://app.aikido.dev/', getByLabel: () => target};
+
+  await assert.rejects(() => controller.fill({label: 'Value', value: 'do-not-echo-this'}), /Sensitive fields/);
 });
 
 test('uses a dedicated Chromium profile and closes only its own context', async () => {
@@ -129,7 +192,7 @@ test('status reports about:blank without labeling it an external auth page', asy
   assert.deepEqual(await controller.status(), {running: true, url: 'about:blank', title: ''});
 });
 
-test('the real route handler attaches the header only to app traffic and logs sanitized metadata', async () => {
+test('browser route strips the researcher header and logs sanitized app metadata', async () => {
   const {BrowserController} = getBrowserModule();
   const id = '123e4567-e89b-12d3-a456-426614174000';
   const request = {
@@ -150,7 +213,7 @@ test('the real route handler attaches the header only to app traffic and logs sa
   });
   controller.recordResponse({request: () => request, status: () => 200});
 
-  assert.equal(continued.headers['X-Intigriti'], 'rkvemula');
+  assert.equal(continued.headers['X-Intigriti'], undefined);
   assert.equal(continued.headers['x-intigriti'], undefined);
   assert.deepEqual(controller.networkLog(), [{method: 'GET', path: `/api/teams/{id}`, status: 200}]);
 });
@@ -173,6 +236,25 @@ test('API reads attach the researcher header and do not follow redirects', async
   assert.equal(call.options.headers['X-Intigriti'], 'rkvemula');
   assert.equal(call.options.maxRedirects, 0);
   assert.equal(response.status, 200);
+});
+
+test('API request failures replace Playwright diagnostics that contain URL and cookie data', async () => {
+  const {BrowserController} = getBrowserModule();
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-api-error-test'});
+  controller.context = {
+    request: {
+      fetch: async () => {
+        throw new Error('GET https://app.aikido.dev/api/me?token=query-secret failed Cookie: session=cookie-secret');
+      },
+    },
+  };
+
+  await assert.rejects(
+    () => controller.apiRead('/api/me?token=query-secret', 'GET'),
+    (error) => error.message === 'API read failed; request details were redacted.'
+      && !error.message.includes('query-secret')
+      && !error.message.includes('cookie-secret'),
+  );
 });
 
 test('an API read consumes the MCP probe budget only once', async () => {
@@ -293,4 +375,83 @@ test('only sends allowed app navigation and enforces read-only API methods and b
   } finally {
     await close();
   }
+});
+
+test('MCP API errors never return request URLs, cookies, or raw client diagnostics', async () => {
+  const {createMcpServer} = getServerModule();
+  const server = createMcpServer({browserController: fakeBrowser({
+    apiRead: async () => { throw new Error('query-secret Cookie: session=cookie-secret'); },
+  })});
+  const {client, close} = await connectClient(server);
+
+  try {
+    const result = await client.callTool({name: 'app_api_read', arguments: {path: '/api/me?token=query-secret'}});
+    const output = JSON.stringify(result);
+    assert.equal(result.isError, true);
+    assert.match(output, /API read failed; request details were redacted/);
+    assert.doesNotMatch(output, /query-secret|cookie-secret/);
+  } finally {
+    await close();
+  }
+});
+
+test('stdin EOF and transport closure trigger idempotent browser cleanup', async () => {
+  const {installShutdownHandlers} = getServerModule();
+  const input = new EventEmitter();
+  const processEvents = new EventEmitter();
+  const transport = {onclose: null};
+  let browserCloses = 0;
+  let serverCloses = 0;
+  const server = {
+    close: async () => {
+      serverCloses += 1;
+      transport.onclose?.();
+    },
+  };
+  const shutdown = installShutdownHandlers({
+    browserController: {close: async () => { browserCloses += 1; }},
+    server,
+    transport,
+    input,
+    processEvents,
+  });
+
+  input.emit('end');
+  await shutdown();
+  transport.onclose?.();
+  await shutdown();
+  assert.equal(browserCloses, 1);
+  assert.equal(serverCloses, 1);
+});
+
+test('closed owned Chromium context clears stale state and can be relaunched', async () => {
+  const {BrowserController} = getBrowserModule();
+  const contexts = [];
+  const chromiumImpl = {
+    launchPersistentContext: async () => {
+      const listeners = new Map();
+      const page = {
+        url: () => 'about:blank',
+        on: (event, handler) => listeners.set(`page:${event}`, handler),
+        isClosed: () => false,
+      };
+      const context = {
+        pages: () => [page],
+        route: async () => {},
+        on: (event, handler) => listeners.set(`context:${event}`, handler),
+        close: async () => listeners.get('context:close')?.(),
+        emitClose: () => listeners.get('context:close')?.(),
+      };
+      contexts.push(context);
+      return context;
+    },
+  };
+  const controller = new BrowserController({chromiumImpl, userDataDir: '/tmp/aikido-relaunch-test'});
+
+  await controller.launch();
+  contexts[0].emitClose();
+  assert.equal((await controller.status()).running, false);
+  await controller.launch();
+  assert.equal(contexts.length, 2);
+  await controller.close();
 });

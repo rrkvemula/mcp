@@ -42,16 +42,16 @@ test('accepts only relative API paths on the app origin', () => {
   }
 });
 
-test('adds the researcher header only to the exact app origin', () => {
-  const {headersForUrl} = getPolicy();
+test('adds the researcher header only to explicit API requests for the exact app origin', () => {
+  const {headersForApiUrl} = getPolicy();
   const base = {'Accept': 'application/json', 'x-intigriti': 'wrong-value'};
 
   assert.deepEqual(
-    headersForUrl(new URL('https://app.aikido.dev/api/issues'), base),
+    headersForApiUrl(new URL('https://app.aikido.dev/api/issues'), base),
     {'Accept': 'application/json', 'X-Intigriti': 'rkvemula'},
   );
   assert.deepEqual(
-    headersForUrl(new URL('https://cdn.aikido.dev/assets/app.js'), base),
+    headersForApiUrl(new URL('https://cdn.aikido.dev/assets/app.js'), base),
     {'Accept': 'application/json'},
   );
 });

@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict';
+import {once} from 'node:events';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
@@ -48,9 +49,24 @@ try {
   const log = textResult(await client.callTool({name: 'browser_network_log', arguments: {}}));
   assert.deepEqual(log, []);
 
-  const close = await client.callTool({name: 'browser_close', arguments: {}});
-  assert.equal(textResult(close).closed, true);
-  process.stdout.write('MCP stdio handshake and visible Chromium smoke passed; no Aikido requests sent.\n');
-} finally {
+  const serverProcess = transport._process;
+  assert.ok(serverProcess, 'expected an MCP server child process');
+  serverProcess.stdin.end();
+  let timeout;
+  let exit;
+  try {
+    exit = await Promise.race([
+      once(serverProcess, 'close'),
+      new Promise((_, reject) => { timeout = setTimeout(() => reject(new Error('MCP server did not shut down after stdin EOF')), 5_000); }),
+    ]);
+  } finally {
+    clearTimeout(timeout);
+  }
+  const [exitCode, signal] = exit;
+  assert.equal(exitCode, 0);
+  assert.equal(signal, null);
   await client.close();
+  process.stdout.write('MCP handshake, visible Chromium, and stdin-EOF cleanup passed; no Aikido requests sent.\n');
+} finally {
+  if (transport._process) await client.close();
 }
