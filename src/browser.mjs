@@ -13,7 +13,7 @@ import {
 const MAX_LOG_ENTRIES = 200;
 const MAX_SNAPSHOT_CHARS = 12_000;
 const MAX_API_BODY_CHARS = 12_000;
-const BLOCKED_ACTION = /\b(delete|remove|disable|confirm|submit|send|invite|import|create|purchase|pay|checkout|logout|log out|revoke|disconnect|save|update|apply|install)\b/i;
+const BLOCKED_ACTION = /\b(delete|remove|disable|confirm|submit|send|invite|import|create|purchase|pay|checkout|logout|log out|revoke|disconnect|save|update|apply|install|start|run|launch|execute|scan|deploy|publish|authorize|grant|connect|add)\b/i;
 const SENSITIVE_FIELD = /\b(password|secret|token|api[\s_-]*key|credential|cookie|authorization|otp|one[\s_-]*time|2fa|recovery[\s_-]*code)\b/i;
 
 function currentAppUrl(page) {
@@ -86,9 +86,10 @@ export function isSensitiveFillTarget({type = '', label = '', name = '', placeho
 }
 
 export class BrowserController {
-  constructor({chromiumImpl = chromium, userDataDir = path.join(os.homedir(), '.local', 'share', 'aikido-chromium-mcp', 'profile')} = {}) {
+  constructor({chromiumImpl = chromium, userDataDir = path.join(os.homedir(), '.local', 'share', 'aikido-chromium-mcp', 'profile'), environment = process.env} = {}) {
     this.chromium = chromiumImpl;
     this.userDataDir = userDataDir;
+    this.environment = environment;
     this.context = null;
     this.page = null;
     this.pending = new Map();
@@ -102,7 +103,12 @@ export class BrowserController {
       executablePath: '/usr/bin/chromium',
       headless: false,
       acceptDownloads: false,
-      args: ['--no-first-run', '--no-default-browser-check'],
+      args: [
+        '--no-first-run',
+        '--no-default-browser-check',
+        '--disable-background-networking',
+        ...(this.environment.WAYLAND_DISPLAY ? ['--ozone-platform=wayland'] : []),
+      ],
     });
 
     this.page = this.context.pages()[0] ?? await this.context.newPage();
@@ -173,7 +179,11 @@ export class BrowserController {
 
   async status() {
     if (!this.context || !this.page) return {running: false};
-    const current = new URL(this.page.url());
+    const currentUrl = this.page.url();
+    if (currentUrl === 'about:blank') {
+      return {running: true, url: 'about:blank', title: await this.page.title()};
+    }
+    const current = new URL(currentUrl);
     return {
       running: true,
       url: current.origin === APP_ORIGIN ? currentAppUrl(this.page) : '[authentication page]',
@@ -193,7 +203,12 @@ export class BrowserController {
   }
 
   async screenshot() {
-    const page = this.requireAppPage();
+    if (!this.context || !this.page) throw new Error('Browser is not running');
+    const current = this.page.url();
+    if (current !== 'about:blank' && new URL(current).origin !== APP_ORIGIN) {
+      throw new Error('Screenshots are available only on app.aikido.dev or about:blank');
+    }
+    const page = this.page;
     return page.screenshot({type: 'png'});
   }
 

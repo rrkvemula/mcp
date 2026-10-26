@@ -4,7 +4,9 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "test": "node test/policy.test.mjs"
+    "test": "node test/run.mjs",
+    "start": "node src/server.mjs",
+    "smoke": "node test/smoke-mcp.mjs"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",

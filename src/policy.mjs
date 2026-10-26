@@ -3,6 +3,10 @@ export const RESEARCHER_HEADER = 'X-Intigriti';
 export const RESEARCHER_USERNAME = 'rkvemula';
 
 const UUID_SEGMENT = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const LONG_NUMERIC_SEGMENT = /^\d{6,}$/;
+const LONG_HEX_SEGMENT = /^[0-9a-f]{24,}$/i;
+const TOKEN_LIKE_SEGMENT = /^[A-Za-z0-9_-]{32,}$/;
+const SENSITIVE_PATH_LABEL = /^(token|secret|key|credential|authorization|session|reset|invite|code|state)$/i;
 
 export function validateAppUrl(value) {
   if (typeof value !== 'string') {
@@ -72,10 +76,28 @@ export function sanitizeAppPath(url) {
     throw new TypeError('sanitizeAppPath expects a URL');
   }
 
-  return url.pathname
-    .split('/')
-    .map((segment) => UUID_SEGMENT.test(segment) ? '{id}' : segment)
-    .join('/');
+  let redactNext = false;
+  return url.pathname.split('/').map((segment) => {
+    if (redactNext) {
+      redactNext = false;
+      return '{id}';
+    }
+    if (SENSITIVE_PATH_LABEL.test(segment)) {
+      redactNext = true;
+      return segment;
+    }
+    if (
+      UUID_SEGMENT.test(segment)
+      || LONG_NUMERIC_SEGMENT.test(segment)
+      || LONG_HEX_SEGMENT.test(segment)
+      || TOKEN_LIKE_SEGMENT.test(segment)
+      || segment.includes('@')
+      || /%40/i.test(segment)
+    ) {
+      return '{id}';
+    }
+    return segment;
+  }).join('/');
 }
 
 export class ProbeBudget {

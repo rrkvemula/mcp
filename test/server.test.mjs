@@ -67,6 +67,9 @@ test('rejects destructive, submitting, and external click targets', () => {
   const {isSafeClickTarget} = getBrowserModule();
 
   assert.equal(isSafeClickTarget({role: 'link', name: 'Issues', href: '/issues'}), true);
+  assert.equal(isSafeClickTarget({role: 'link', name: 'Scans', href: '/scans'}), true);
+  assert.equal(isSafeClickTarget({role: 'button', name: 'Start AI pentest', type: 'button'}), false);
+  assert.equal(isSafeClickTarget({role: 'button', name: 'Connect repository', type: 'button'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Delete project', type: 'button'}), false);
   assert.equal(isSafeClickTarget({role: 'button', name: 'Save', type: 'submit'}), false);
   assert.equal(isSafeClickTarget({role: 'link', name: 'External', href: 'https://outside.test/'}), false);
@@ -94,13 +97,36 @@ test('uses a dedicated Chromium profile and closes only its own context', async 
   const controller = new BrowserController({
     chromiumImpl: {launchPersistentContext: async (_profile, options) => { launchOptions = options; return context; }},
     userDataDir: '/tmp/aikido-mcp-test-profile',
+    environment: {WAYLAND_DISPLAY: 'wayland-0'},
   });
 
   await controller.launch();
   await controller.close();
   assert.equal(launchOptions.executablePath, '/usr/bin/chromium');
   assert.equal(launchOptions.headless, false);
+  assert.ok(launchOptions.args.includes('--disable-background-networking'));
+  assert.ok(launchOptions.args.includes('--ozone-platform=wayland'));
   assert.equal(closeCount, 1);
+});
+
+test('screenshots the blank smoke page but not an external authentication page', async () => {
+  const {BrowserController} = getBrowserModule();
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-screenshot-test'});
+  controller.context = {};
+  controller.page = {url: () => 'about:blank', screenshot: async () => Buffer.from('png')};
+
+  assert.equal((await controller.screenshot()).toString(), 'png');
+  controller.page = {url: () => 'https://login.example.test/', screenshot: async () => Buffer.from('private')};
+  await assert.rejects(() => controller.screenshot(), /app\.aikido\.dev/);
+});
+
+test('status reports about:blank without labeling it an external auth page', async () => {
+  const {BrowserController} = getBrowserModule();
+  const controller = new BrowserController({chromiumImpl: {}, userDataDir: '/tmp/aikido-status-test'});
+  controller.context = {};
+  controller.page = {url: () => 'about:blank', title: async () => ''};
+
+  assert.deepEqual(await controller.status(), {running: true, url: 'about:blank', title: ''});
 });
 
 test('the real route handler attaches the header only to app traffic and logs sanitized metadata', async () => {

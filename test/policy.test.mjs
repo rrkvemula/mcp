@@ -59,10 +59,19 @@ test('adds the researcher header only to the exact app origin', () => {
 test('sanitizes query, fragment, and UUID path values from app request logs', () => {
   const {sanitizeAppPath} = getPolicy();
   const id = '123e4567-e89b-12d3-a456-426614174000';
+  const token = 'A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6';
 
   assert.equal(
     sanitizeAppPath(new URL(`https://app.aikido.dev/api/teams/${id}/issues?token=private#tab`)),
     '/api/teams/{id}/issues',
+  );
+  assert.equal(
+    sanitizeAppPath(new URL(`https://app.aikido.dev/api/reset/${token}?next=/dashboard`)),
+    '/api/reset/{id}',
+  );
+  assert.equal(
+    sanitizeAppPath(new URL('https://app.aikido.dev/api/issues/1234567890123')),
+    '/api/issues/{id}',
   );
 });
 

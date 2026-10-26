@@ -74,11 +74,13 @@
 **Files:**
 - Create: `README.md`
 - Create: `codex-config.example.toml`
+- Create: `.gitignore`
 - Create: `test/run.mjs`
+- Create: `test/smoke-mcp.mjs`
 - Modify: `package.json` scripts
 
 - [ ] **Step 1: Document install, start, user sign-in, request budget, scope boundaries, and clean shutdown** in `README.md`; state that this creates a separate Chromium profile and does not reuse/export cookies.
-- [ ] **Step 2: Add a Codex MCP configuration example** that starts `node /home/rkvemula/aikido-chromium-mcp/src/server.mjs` over stdio; do not overwrite the user's existing Codex configuration.
+- [ ] **Step 2: Add a Codex MCP configuration example** that starts `node /home/rkvemula/aikido-chromium-mcp/src/server.mjs` over stdio and forwards local display environment variables; do not overwrite the user's existing Codex configuration.
 - [ ] **Step 3: Set `npm test` to `node test/run.mjs` (explicitly importing test files because this Node build's `--test` discovery is broken), add `npm start`, and run `npm test` from a clean install.
-- [ ] **Step 4: Smoke-test the MCP handshake and launch Chromium to `about:blank`**, verify status/screenshot/close behavior, and confirm no external target request occurs during the smoke test.
+- [ ] **Step 4: Smoke-test the MCP handshake and launch Chromium to `about:blank`**, verify status/screenshot/close behavior through `npm run smoke`, and confirm no external target request occurs during the smoke test.
 - [ ] **Step 5: Report the config block and required MCP-host restart**; the new server cannot appear in the current tool list until the host reloads it.
