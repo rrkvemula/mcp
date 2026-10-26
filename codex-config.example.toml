@@ -1,0 +1,6 @@
+[mcp_servers.aikido_chromium]
+command = "/usr/bin/node"
+args = ["/home/rkvemula/aikido-chromium-mcp/src/server.mjs"]
+cwd = "/home/rkvemula/aikido-chromium-mcp"
+startup_timeout_sec = 30
+env_vars = ["DISPLAY", "WAYLAND_DISPLAY", "XDG_RUNTIME_DIR", "DBUS_SESSION_BUS_ADDRESS"]
