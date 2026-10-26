@@ -12,7 +12,7 @@ Direct browser connections avoid the Burp certificate-trust issue. The MCP will 
 
 ## Tool surface and safeguards
 
-- Browser status, app navigation, visible-text snapshot, screenshot, click, fill, and close tools.
+- Browser status, app navigation, visible-text snapshot, screenshot, click, fill, close, and sanitized app-request log tools.
 - A read-only API request tool limited to `GET` and `HEAD` on `https://app.aikido.dev`; it adds `X-Intigriti: rkvemula` only to that origin.
 - Explicit API probes are limited to five per rolling 60 seconds. Normal page resources and user-driven navigation are not counted as probes.
 - Network metadata kept in memory only: method, sanitized path, and status for `app.aikido.dev`; no query strings, headers, bodies, cookies, or tokens are logged.

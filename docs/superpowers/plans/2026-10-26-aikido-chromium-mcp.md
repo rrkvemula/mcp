@@ -60,7 +60,7 @@
 - `BrowserController.close(): Promise<void>` closes only the dedicated Playwright context and its Chromium process, preserving the profile and all other browsers.
 - `BrowserController.navigate(url: string): Promise<void>` uses `validateAppUrl` for explicit navigation and rejects query strings/fragments.
 - `BrowserController.snapshot(): Promise<{url: string; title: string; text: string}>` returns current visible app content without URL query strings.
-- MCP tools: `browser_launch`, `browser_status`, `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_close`, and `app_api_read`.
+- MCP tools: `browser_launch`, `browser_status`, `browser_navigate`, `browser_snapshot`, `browser_screenshot`, `browser_click`, `browser_fill`, `browser_network_log`, `browser_close`, and `app_api_read`.
 - `app_api_read({path, method})` uses `validateApiPath`, accepts app-relative `/api/` paths with query filters and only `GET`/`HEAD`, calls `ProbeBudget.consume()`, and returns the response for the user-owned test account without persisting it.
 
 - [ ] **Step 1: Add failing server tests** for tool registration, app-only navigation, header isolation, external resource/auth-redirect handling, click restrictions, password/secret field rejection, API method/rate limits, and profile-safe close behavior.
