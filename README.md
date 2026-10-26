@@ -19,7 +19,7 @@ npm test
 npm run smoke
 ```
 
-The smoke test starts a visible Chromium window at `about:blank`, exercises the MCP handshake/status/screenshot tools, then closes the MCP client stdin and verifies the server closes only the profile it launched. It sends no requests to Aikido.
+The smoke test starts a visible Chromium window at `about:blank` with a temporary isolated profile, exercises the MCP handshake/status/screenshot tools, then closes the MCP client stdin and verifies the server closes its browser and removes the temporary profile. It sends no requests to Aikido and does not touch the normal persistent profile.
 
 ## Register with Codex
 
@@ -31,7 +31,7 @@ After the host restarts, call `browser_launch`. Sign in manually in the new Chro
 
 - Explicit browser navigation and API reads are restricted to `https://app.aikido.dev`.
 - The visible browser does not add `X-Intigriti` to page requests: Chromium can carry overridden request headers through cross-origin redirects without re-running the route handler. Only the explicit `app_api_read` tool sends `X-Intigriti: rkvemula`, and it disables redirects.
-- Browser navigations initiated by the Aikido app, including its login flow, may reach an external identity provider without the researcher header. Direct external navigation is blocked, and the MCP does not inspect external-page content; sign in manually in the visible browser.
+- Browser navigations initiated by the Aikido app, including multi-hop login redirects, may continue through external identity-provider origins without the researcher header. Direct external navigation is blocked, and the MCP does not inspect external-page content; sign in manually in the visible browser.
 - `app_api_read` permits only `GET` and `HEAD` on `/api/` paths and allows query filters. It enforces five explicit probes per rolling 60 seconds and does not follow redirects.
 - The browser action tools do not expose arbitrary JavaScript. Password, credential, token, and verification-code fields must be entered manually. Form-associated buttons, effective submit controls, and clicks with destructive/action-like labels or paths are blocked.
 - The network log is memory-only and contains app request method, sanitized path, and status. It omits query strings, headers, bodies, cookies, and tokens.

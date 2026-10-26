@@ -21,6 +21,16 @@ test('real Chromium strips the researcher header on server, JS, and popup app-to
   const externalHeaders = [];
   const external = createServer((request, response) => {
     externalHeaders.push(request.headers);
+    if (request.url === '/auth-start') {
+      response.writeHead(200, {'content-type': 'text/html'});
+      response.end(`<script>window.location = ${JSON.stringify(`${externalOrigin}/auth-done`)};</script>`);
+      return;
+    }
+    if (request.url === '/server-auth-start') {
+      response.writeHead(200, {'content-type': 'text/html'});
+      response.end(`<script>window.location = ${JSON.stringify(`${externalOrigin}/server-auth-done`)};</script>`);
+      return;
+    }
     response.writeHead(200, {'content-type': 'text/plain'});
     response.end('local redirect destination');
   });
@@ -33,7 +43,12 @@ test('real Chromium strips the researcher header on server, JS, and popup app-to
     }
     if (request.url === '/client-redirect') {
       response.writeHead(200, {'content-type': 'text/html'});
-      response.end(`<script>window.location = ${JSON.stringify(`${externalOrigin}/client-landing`)};</script>`);
+      response.end(`<script>window.location = ${JSON.stringify(`${externalOrigin}/auth-start`)};</script>`);
+      return;
+    }
+    if (request.url === '/server-auth') {
+      response.writeHead(302, {location: `${externalOrigin}/server-auth-start`});
+      response.end();
       return;
     }
     response.writeHead(302, {location: `${externalOrigin}/server-landing`});
@@ -46,19 +61,23 @@ test('real Chromium strips the researcher header on server, JS, and popup app-to
   controller.context = context;
   controller.page = await context.newPage();
   await context.route('**/*', (route) => controller.routeRequest(route));
+  context.on('response', (response) => controller.recordResponse(response));
+  context.on('requestfailed', (request) => controller.recordFailure(request));
 
   try {
     await controller.page.goto(`${appOrigin}/start`, {waitUntil: 'domcontentloaded'});
     assert.equal(await controller.page.locator('body').innerText(), 'local redirect destination');
+    await controller.page.goto(`${appOrigin}/server-auth`, {waitUntil: 'domcontentloaded'});
+    await controller.page.waitForURL(`${externalOrigin}/server-auth-done`);
     await controller.page.goto(`${appOrigin}/client-redirect`, {waitUntil: 'domcontentloaded'});
-    await controller.page.waitForURL(`${externalOrigin}/client-landing`);
+    await controller.page.waitForURL(`${externalOrigin}/auth-done`);
     await controller.page.goto(`${appOrigin}/popup`, {waitUntil: 'domcontentloaded'});
     const popupWait = controller.page.waitForEvent('popup');
     await controller.page.locator('#open-login').click();
     const popup = await popupWait;
     await popup.waitForLoadState('domcontentloaded');
     assert.equal(popup.url(), `${externalOrigin}/popup-landing`);
-    assert.equal(externalHeaders.length, 3);
+    assert.equal(externalHeaders.length, 6);
     assert.equal(externalHeaders.some((headers) => headers['x-intigriti'] !== undefined), false);
   } finally {
     await controller.close();

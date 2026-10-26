@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
+import {mkdtemp, rm} from 'node:fs/promises';
 import {once} from 'node:events';
+import os from 'node:os';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {Client} from '@modelcontextprotocol/sdk/client/index.js';
@@ -7,15 +9,19 @@ import {StdioClientTransport} from '@modelcontextprotocol/sdk/client/stdio.js';
 
 const projectRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const serverPath = path.join(projectRoot, 'src', 'server.mjs');
+const smokeProfile = await mkdtemp(path.join(os.tmpdir(), 'aikido-chromium-smoke-'));
 const transport = new StdioClientTransport({
   command: process.execPath,
   args: [serverPath],
   cwd: projectRoot,
-  env: Object.fromEntries(
-    ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']
-      .filter((name) => process.env[name])
-      .map((name) => [name, process.env[name]]),
-  ),
+  env: {
+    ...Object.fromEntries(
+      ['DISPLAY', 'WAYLAND_DISPLAY', 'XDG_RUNTIME_DIR', 'DBUS_SESSION_BUS_ADDRESS']
+        .filter((name) => process.env[name])
+        .map((name) => [name, process.env[name]]),
+    ),
+    AIKIDO_CHROMIUM_PROFILE: smokeProfile,
+  },
   stderr: 'inherit',
 });
 const client = new Client({name: 'aikido-chromium-smoke', version: '0.1.0'});
@@ -69,4 +75,5 @@ try {
   process.stdout.write('MCP handshake, visible Chromium, and stdin-EOF cleanup passed; no Aikido requests sent.\n');
 } finally {
   if (transport._process) await client.close();
+  await rm(smokeProfile, {recursive: true, force: true});
 }

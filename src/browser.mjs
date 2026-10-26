@@ -40,7 +40,7 @@ function currentAppUrl(page) {
   return `${APP_ORIGIN}${sanitizeAppPath(url)}`;
 }
 
-export function decideRequest({url, resourceType = 'other', isNavigationRequest = false, redirectedFromUrl = null, sourceUrl = null, appOrigin = APP_ORIGIN}) {
+export function decideRequest({url, resourceType = 'other', isNavigationRequest = false, redirectedFromUrl = null, sourceUrl = null, appOrigin = APP_ORIGIN, authOrigins = new Set()}) {
   let parsed;
   try {
     parsed = new URL(url);
@@ -56,7 +56,8 @@ export function decideRequest({url, resourceType = 'other', isNavigationRequest 
     for (const source of [redirectedFromUrl, sourceUrl]) {
       if (!source) continue;
       try {
-        if (new URL(source).origin === appOrigin) {
+        const sourceOrigin = new URL(source).origin;
+        if (sourceOrigin === appOrigin || authOrigins.has(sourceOrigin)) {
           return {action: 'continue', log: false};
         }
       } catch {
@@ -100,11 +101,12 @@ export function isSensitiveFillTarget({type = '', label = '', name = '', placeho
 }
 
 export class BrowserController {
-  constructor({chromiumImpl = chromium, userDataDir = path.join(os.homedir(), '.local', 'share', 'aikido-chromium-mcp', 'profile'), environment = process.env, appOrigin = APP_ORIGIN} = {}) {
+  constructor({chromiumImpl = chromium, userDataDir, environment = process.env, appOrigin = APP_ORIGIN} = {}) {
     this.chromium = chromiumImpl;
-    this.userDataDir = userDataDir;
+    this.userDataDir = userDataDir ?? environment.AIKIDO_CHROMIUM_PROFILE ?? path.join(os.homedir(), '.local', 'share', 'aikido-chromium-mcp', 'profile');
     this.environment = environment;
     this.appOrigin = appOrigin;
+    this.authOrigins = new Set();
     this.context = null;
     this.page = null;
     this.pending = new Map();
@@ -137,6 +139,7 @@ export class BrowserController {
       this.context = null;
       this.page = null;
       this.pending.clear();
+      this.authOrigins.clear();
     });
     this.attachPage(context.pages()[0] ?? await context.newPage());
     await this.context.route('**/*', (route) => this.routeRequest(route));
@@ -168,6 +171,15 @@ export class BrowserController {
       }
       sourceUrl ??= request.headers().referer ?? null;
     }
+    const destinationOrigin = new URL(request.url()).origin;
+    const authSource = [previous?.url() ?? null, sourceUrl].some((source) => {
+      if (!source) return false;
+      try {
+        return this.authOrigins.has(new URL(source).origin);
+      } catch {
+        return false;
+      }
+    });
     const decision = decideRequest({
       url: request.url(),
       resourceType: request.resourceType(),
@@ -175,11 +187,27 @@ export class BrowserController {
       redirectedFromUrl: previous?.url() ?? null,
       sourceUrl,
       appOrigin: this.appOrigin,
+      authOrigins: this.authOrigins,
     });
 
     if (decision.action === 'abort') {
       await route.abort('blockedbyclient');
       return;
+    }
+
+    if (request.isNavigationRequest()) {
+      if (destinationOrigin === this.appOrigin) {
+        if (authSource) this.authOrigins.clear();
+      } else if (authSource || [previous?.url() ?? null, sourceUrl].some((source) => {
+        if (!source) return false;
+        try {
+          return new URL(source).origin === this.appOrigin;
+        } catch {
+          return false;
+        }
+      })) {
+        this.authOrigins.add(destinationOrigin);
+      }
     }
 
     const url = new URL(request.url());
@@ -197,9 +225,24 @@ export class BrowserController {
   recordResponse(response) {
     const request = response.request();
     const entry = this.pending.get(request);
-    if (!entry) return;
-    this.pending.delete(request);
-    this.pushLog({...entry, status: response.status()});
+    if (entry) {
+      this.pending.delete(request);
+      this.pushLog({...entry, status: response.status()});
+    }
+
+    try {
+      if (!request.isNavigationRequest() || response.status() < 300 || response.status() >= 400) return;
+      const fromOrigin = new URL(request.url()).origin;
+      if (fromOrigin !== this.appOrigin && !this.authOrigins.has(fromOrigin)) return;
+      const location = response.headers().location;
+      if (!location) return;
+      const destinationOrigin = new URL(location, request.url()).origin;
+      if (destinationOrigin === this.appOrigin) this.authOrigins.clear();
+      else this.authOrigins.add(destinationOrigin);
+    } catch {
+      // Redirect tracking is best-effort; malformed response headers do not
+      // change the request routing decision or enter the network log.
+    }
   }
 
   recordFailure(request) {
@@ -221,6 +264,7 @@ export class BrowserController {
     this.context = null;
     this.page = null;
     this.pending.clear();
+    this.authOrigins.clear();
     if (context) await context.close();
   }
 

@@ -8,7 +8,7 @@ Give Codex a local, visible Chromium session for the user's Aikido test account 
 
 Use a small local Node MCP server backed by Playwright and system Chromium. It launches a separate persistent profile because the existing Chromium and Burp Browser have no remote-debugging port. The user signs into this profile manually; existing browser profiles and credentials remain untouched.
 
-Direct browser connections avoid the Burp certificate-trust issue. The MCP will target `app.aikido.dev` only for explicit navigation and API probes. Browser page requests never receive the researcher header: Chromium can preserve overridden headers across redirects without re-running the route callback. The explicit API tool adds the header and disables redirects. App-initiated authentication navigation may reach an identity provider without the header; direct external navigation is blocked.
+Direct browser connections avoid the Burp certificate-trust issue. The MCP will target `app.aikido.dev` only for explicit navigation and API probes. Browser page requests never receive the researcher header: Chromium can preserve overridden headers across redirects without re-running the route callback. The explicit API tool adds the header and disables redirects. An app-initiated authentication chain may continue through its external identity-provider origins without the header; direct external navigation is blocked.
 
 ## Tool surface and safeguards
 

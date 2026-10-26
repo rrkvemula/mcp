@@ -58,6 +58,13 @@ test('routes app and authentication traffic without adding the researcher header
     redirectedFromUrl: 'https://app.aikido.dev/login',
   }), {action: 'continue', log: false});
   assert.deepEqual(decideRequest({
+    url: 'https://login.example.test/check-cookie',
+    resourceType: 'document',
+    isNavigationRequest: true,
+    sourceUrl: 'https://login.example.test/authorize',
+    authOrigins: new Set(['https://login.example.test']),
+  }), {action: 'continue', log: false});
+  assert.deepEqual(decideRequest({
     url: 'https://login.example.test/authorize',
     resourceType: 'document',
     isNavigationRequest: true,
@@ -170,6 +177,16 @@ test('uses a dedicated Chromium profile and closes only its own context', async 
   assert.ok(launchOptions.args.includes('--disable-background-networking'));
   assert.ok(launchOptions.args.includes('--ozone-platform=wayland'));
   assert.equal(closeCount, 1);
+});
+
+test('supports an explicit isolated profile path for smoke processes', () => {
+  const {BrowserController} = getBrowserModule();
+  const controller = new BrowserController({
+    chromiumImpl: {},
+    environment: {AIKIDO_CHROMIUM_PROFILE: '/tmp/aikido-mcp-isolated-profile'},
+  });
+
+  assert.equal(controller.userDataDir, '/tmp/aikido-mcp-isolated-profile');
 });
 
 test('screenshots the blank smoke page but not an external authentication page', async () => {
@@ -449,8 +466,10 @@ test('closed owned Chromium context clears stale state and can be relaunched', a
   const controller = new BrowserController({chromiumImpl, userDataDir: '/tmp/aikido-relaunch-test'});
 
   await controller.launch();
+  controller.authOrigins.add('https://login.example.test');
   contexts[0].emitClose();
   assert.equal((await controller.status()).running, false);
+  assert.equal(controller.authOrigins.size, 0);
   await controller.launch();
   assert.equal(contexts.length, 2);
   await controller.close();
